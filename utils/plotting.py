@@ -50,7 +50,7 @@ def plot_results(state, history, x, y):
     ax2.tick_params(axis='y', labelcolor=color)
     plt.tight_layout()
     plt.title('LM iteration data')
-    plt.show()
+    # plt.show()
 
     # Desired number of elements
     # step_size = max(1, len(eigevec) // 40)

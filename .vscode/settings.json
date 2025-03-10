@@ -1,0 +1,26 @@
+{
+    "python.analysis.extraPaths": [
+        "./utils",
+        "./data"
+    ],
+    "python.testing.unittestArgs": [
+        "-v",
+        "-s",
+        "./tests",
+        "-p",
+        "*test.py"
+    ],
+    "python.testing.pytestEnabled": false,
+    "python.testing.unittestEnabled": true,
+    "python.envFile": "${workspaceFolder}/.env", // For debugger
+    // "terminal.integrated.env.windows": {
+    //     "PYTHONPATH": "${workspaceFolder}/data;${workspaceFolder}/utils;${workspaceFolder}/models"
+    // },
+    // "terminal.integrated.env.linux": {
+    //     "PYTHONPATH": "${workspaceFolder}/data;${workspaceFolder}/utils;${workspaceFolder}/models"
+    // },
+    // "terminal.integrated.env.osx": {
+    //     "PYTHONPATH": "${workspaceFolder}/data;${workspaceFolder}/utils;${workspaceFolder}/models"
+    // }
+
+}
