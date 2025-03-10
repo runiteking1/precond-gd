@@ -4,21 +4,16 @@ from typing import Union
 import chex
 import jax
 import jax.numpy as jnp
-import optax
-from flax.training import train_state  # Useful dataclass to keep train state
+from flax.training.train_state import TrainState  # Useful dataclass to keep train state
 from jax.tree import map as tree_map
 from tqdm import tqdm
 
 from cg import conjugate_gradient
 from data_utils import batch_data
 from jacobian_tools import flatten_jacobian
+from model_utils import create_train_state
 from models.MLP import *
 from plotting import plot_results
-
-
-class TrainState(train_state.TrainState):
-    pass
-
 
 @chex.dataclass(frozen=True)
 class PrecondData:
@@ -33,31 +28,6 @@ class PrecondData:
 
     # For CG:
     max_iters: int = 100
-
-
-def create_train_state(module, rng=None, learning_rate=1e-3, momentum=.9, optimizer='adam'):
-    # Can be more careful with RNG; but this should be fine
-    if rng is None:
-        rng = jax.random.key(0)
-
-    # Init parameters
-    params = module.init(rng, jnp.ones([1]))
-
-    # Init optimizer
-    if optimizer == 'sgd':
-        tx = optax.sgd(learning_rate, momentum)
-    elif optimizer == 'adamw':
-        tx = optax.adamw(learning_rate)
-    elif optimizer == 'adam':
-        tx = optax.adam(learning_rate)
-    else:
-        tx = optax.sgd(learning_rate)
-
-    return TrainState.create(
-        apply_fn=module.apply,
-        params=params,
-        tx=tx
-    )
 
 
 def train_model(state: TrainState, x, y, num_iterations: int = 1_000,
