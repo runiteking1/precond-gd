@@ -3,9 +3,9 @@ from typing import Union
 
 import os
 
-# os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
-# os.environ['JAX_PLATFORM_NAME'] = 'cpu'
-# os.environ['JAX_PLATFORMS']='cpu'
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
+os.environ['JAX_PLATFORM_NAME'] = 'cpu'
+os.environ['JAX_PLATFORMS']='cpu'
 
 import chex
 import jax
@@ -249,6 +249,8 @@ def train_model(state: TrainState, x, y, num_iterations:int = 1_000,
     return state, metrics_history
     
 def run_exp():
+    print(jax.default_backend())
+
     # --------------------- SGD -----------------
     # x = jnp.linspace(0, 1, 100).reshape(-1, 1)
     # y = jnp.sin(1 * jnp.pi * x)
@@ -288,7 +290,7 @@ def run_exp():
 
     # ------------------- gn-exact 
     x = jnp.linspace(0, 1, 100).reshape(-1, 1)
-    y = jnp.sin(1  * jnp.pi * x)
+    y = jnp.sin(1 * jnp.pi * x) + .1 * jnp.sin(5 * jnp.pi * x)
     # model = MLP(num_layers=8,hidden_dim=24)
     model = MLP_1D(num_layers=4,hidden_dim=10)
     key = jax.random.PRNGKey(0)
@@ -302,9 +304,9 @@ def run_exp():
                                         lm_schedule=lm_info,
                                         )
     plot_results(state, metrics_history_gn_low, x, y)
-    plt.show()
+
     x = jnp.linspace(0, 1, 100).reshape(-1, 1)
-    y = jnp.sin(8 * jnp.pi * x)
+    y =jnp.sin(1 * jnp.pi * x) + 2.1 * jnp.sin(5 * jnp.pi * x)
     model = MLP_1D(num_layers=4, hidden_dim=10)
     state = create_train_state(model, learning_rate=1e-2, momentum=0, optimizer='sgd')
     state, metrics_history_gn_high = train_model(state, x, y, num_iterations=5000, obtain_matrices=False,
@@ -312,9 +314,20 @@ def run_exp():
                                          )
     plot_results(state, metrics_history_gn_high, x, y)
 
+    x = jnp.linspace(0, 1, 100).reshape(-1, 1)
+    y =jnp.sin(1 * jnp.pi * x)
+    model = MLP_1D(num_layers=4, hidden_dim=10)
+    state = create_train_state(model, learning_rate=1e-2, momentum=0, optimizer='sgd')
+    state, metrics_history_gn_simple = train_model(state, x, y, num_iterations=5000, obtain_matrices=False,
+                                         lm_schedule=lm_info,
+                                         )
+    plot_results(state, metrics_history_gn_simple, x, y)
+
+
     plt.figure()
-    plt.plot(metrics_history_gn_high['train_loss'])
-    plt.plot(metrics_history_gn_low['train_loss'])
+    plt.semilogy(metrics_history_gn_high['train_loss'])
+    plt.semilogy(metrics_history_gn_low['train_loss'])
+    plt.semilogy(metrics_history_gn_simple['train_loss'])
     # ------------------- gn-exact 
 
     plt.show()
