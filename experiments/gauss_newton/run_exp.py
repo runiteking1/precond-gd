@@ -21,6 +21,8 @@ from model_utils import create_train_state
 from MLP import MLP_1D
 from plotting import plot_results
 from matplotlib import pyplot as plt
+jax.config.update("jax_enable_x64", True)
+
 
 @chex.dataclass(frozen=True)
 class PrecondData:
@@ -140,14 +142,14 @@ def train_model(state: TrainState, x, y, num_iterations:int = 1_000,
                 # move *beforeeee* 
                 
                 jacobian_fn = flatten_jacobian(jax.jacrev(model_output)(state.params, x), x)
-                print(jacobian_fn[0, :])
+                # print(jacobian_fn[0, :])
                 # Compute SVD
                 u, s, vh = jnp.linalg.svd(jacobian_fn, full_matrices=False) 
     
                 # Compute inverse
                 threshold = 1e-3
                 s_inv = jnp.where(s > lm_info.thresh, s**-2, threshold)
-                print(f'{s_inv=}')
+                # print(f'{s_inv=}')
     
                 # Apply to grads
                 # print(flatten_grad(grads))
@@ -214,6 +216,7 @@ def train_model(state: TrainState, x, y, num_iterations:int = 1_000,
     metrics_history = {
         'train_loss': [], 'eigs': [], 'mat': [],
         'lm_data': [],
+        'prediction': []
     }
 
     rng_key = jax.random.PRNGKey(0)
@@ -239,12 +242,18 @@ def train_model(state: TrainState, x, y, num_iterations:int = 1_000,
         metrics_history['train_loss'].append(avg_loss)
         metrics_history['lm_data'].append(lm_data)
 
+
         if (epoch % 100) == 0: 
             if obtain_matrices:
                 out = get_eigs(state, x)
                 
                 for key in out.keys():
                     metrics_history[key].append(out[key])
+
+            metrics_history['prediction'].append(
+                state.apply_fn(state.params, x)
+            )
+
 
     return state, metrics_history
     
@@ -289,8 +298,8 @@ def run_exp():
     # --------------------- END SGD ----------------- 
 
     # ------------------- gn-exact 
-    x = jnp.linspace(0, 1, 100).reshape(-1, 1)
-    y = jnp.sin(1 * jnp.pi * x) + .1 * jnp.sin(5 * jnp.pi * x)
+    x = jnp.linspace(0, 1, 200).reshape(-1, 1)
+    y = jnp.sin(1 * jnp.pi * x) + 5 * jnp.sin(5 * jnp.pi * x + 2) + 7 * jnp.sin(7 * jnp.pi * x - 1)
     # model = MLP(num_layers=8,hidden_dim=24)
     model = MLP_1D(num_layers=4,hidden_dim=10)
     key = jax.random.PRNGKey(0)
@@ -300,34 +309,49 @@ def run_exp():
         # key=key
     )
     state = create_train_state(model, learning_rate=1e-2, momentum=0, optimizer='sgd')
-    state, metrics_history_gn_low = train_model(state, x, y, num_iterations=5000, obtain_matrices=False, 
+    state, metrics_history_gn_low = train_model(state, x, y, num_iterations=5001, obtain_matrices=False, 
                                         lm_schedule=lm_info,
                                         )
     plot_results(state, metrics_history_gn_low, x, y)
+    plt.show()
 
-    x = jnp.linspace(0, 1, 100).reshape(-1, 1)
-    y =jnp.sin(1 * jnp.pi * x) + 2.1 * jnp.sin(5 * jnp.pi * x)
-    model = MLP_1D(num_layers=4, hidden_dim=10)
-    state = create_train_state(model, learning_rate=1e-2, momentum=0, optimizer='sgd')
-    state, metrics_history_gn_high = train_model(state, x, y, num_iterations=5000, obtain_matrices=False,
-                                         lm_schedule=lm_info,
-                                         )
-    plot_results(state, metrics_history_gn_high, x, y)
+    n = len(y)
+    all_fft = []
+    for est in metrics_history_gn_low['prediction']:
+        fft_err = jnp.fft.fft(y - est) / n
+        fft_err = fft_err[:n // 2]
+        fft_err = jnp.abs(fft_err)
+        all_fft.append(fft_err[::5].flatten())
+    
+    for i, series in enumerate(all_fft):
+        plt.semilogy(series, label=f'Series {i * 5}')  # Label with index
 
-    x = jnp.linspace(0, 1, 100).reshape(-1, 1)
-    y =jnp.sin(1 * jnp.pi * x)
-    model = MLP_1D(num_layers=4, hidden_dim=10)
-    state = create_train_state(model, learning_rate=1e-2, momentum=0, optimizer='sgd')
-    state, metrics_history_gn_simple = train_model(state, x, y, num_iterations=5000, obtain_matrices=False,
-                                         lm_schedule=lm_info,
-                                         )
-    plot_results(state, metrics_history_gn_simple, x, y)
+    plt.title('Error in frequency')
+    plt.legend(loc='upper left', bbox_to_anchor=(1, 1))  # Place legend outside
+    plt.show()
+    # x = jnp.linspace(0, 1, 100).reshape(-1, 1)
+    # y =jnp.sin(1 * jnp.pi * x) + 2.1 * jnp.sin(5 * jnp.pi * x)
+    # model = MLP_1D(num_layers=4, hidden_dim=10)
+    # state = create_train_state(model, learning_rate=1e-2, momentum=0, optimizer='sgd')
+    # state, metrics_history_gn_high = train_model(state, x, y, num_iterations=5000, obtain_matrices=False,
+    #                                      lm_schedule=lm_info,
+    #                                      )
+    # plot_results(state, metrics_history_gn_high, x, y)
+
+    # x = jnp.linspace(0, 1, 100).reshape(-1, 1)
+    # y =jnp.sin(1 * jnp.pi * x)
+    # model = MLP_1D(num_layers=4, hidden_dim=10)
+    # state = create_train_state(model, learning_rate=1e-2, momentum=0, optimizer='sgd')
+    # state, metrics_history_gn_simple = train_model(state, x, y, num_iterations=5000, obtain_matrices=False,
+    #                                      lm_schedule=lm_info,
+    #                                      )
+    # plot_results(state, metrics_history_gn_simple, x, y)
 
 
-    plt.figure()
-    plt.semilogy(metrics_history_gn_high['train_loss'])
-    plt.semilogy(metrics_history_gn_low['train_loss'])
-    plt.semilogy(metrics_history_gn_simple['train_loss'])
+    # plt.figure()
+    # plt.semilogy(metrics_history_gn_high['train_loss'])
+    # plt.semilogy(metrics_history_gn_low['train_loss'])
+    # plt.semilogy(metrics_history_gn_simple['train_loss'])
     # ------------------- gn-exact 
 
     plt.show()
