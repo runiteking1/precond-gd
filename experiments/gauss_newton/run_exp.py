@@ -298,36 +298,49 @@ def run_exp():
     # --------------------- END SGD ----------------- 
 
     # ------------------- gn-exact 
-    # x = jnp.linspace(0, 1, 100).reshape(-1, 1)
-    # y = jnp.sin(1 * jnp.pi * x) #+ 5 * jnp.sin(5 * jnp.pi * x + 2) + 7 * jnp.sin(7 * jnp.pi * x - 1)
-    # # model = MLP(num_layers=8,hidden_dim=24)
-    # model = MLP_1D(num_layers=6,hidden_dim=8)
+    x = jnp.linspace(0, 1, 100).reshape(-1, 1)
+    # y = jnp.sin(1 * jnp.pi * x) + 5 * jnp.sin(5 * jnp.pi * x + 2) + 7 * jnp.sin(7 * jnp.pi * x - 1) + 7 * jnp.sin(10 * jnp.pi * x + .2)
+    # y = jnp.sin(1 * jnp.pi * x) + jnp.sin(5 * jnp.pi * x + 2) + 7 * jnp.sin(7 * jnp.pi * x - 1) + 7 * jnp.sin(10 * jnp.pi * x + .2)
+    y = jnp.zeros_like(x)
+    n = 3
+    for k in range(1, n + 1):
+        y += k / n * jnp.sin((2 * k + 1) * jnp.pi * x - k)
+
+    model = MLP_1D(num_layers=2,hidden_dim=80)
+    # model = MLP_1D(num_layers=8,hidden_dim=24)
     # key = jax.random.PRNGKey(0)
     lm_info = PrecondData(
         method='gn-exact', epoch=0, lamb=1e-1,
+        # method='smw',epoch=0, lamb=1e-1,
         # thresh=1e-1
         # key=key
     )
-    # state = create_train_state(model, learning_rate=1e-2, momentum=0, optimizer='sgd')
-    # state, metrics_history_gn_low = train_model(state, x, y, num_iterations=5000, obtain_matrices=False, 
-    #                                     lm_schedule=lm_info,
-    #                                     )
-    # plot_results(state, metrics_history_gn_low, x, y)
+    state = create_train_state(model, learning_rate=1e-2, momentum=0, optimizer='sgd')
+    state, metrics_history_gn_low = train_model(state, x, y, num_iterations=10000, obtain_matrices=False, 
+                                        lm_schedule=lm_info, batch_size=100
+                                        )
+    plot_results(state, metrics_history_gn_low, x, y)
+    plt.show()
 
-    # n = len(y)
-    # all_fft = []
-    # for est in metrics_history_gn_low['prediction']:
-    #     fft_err = jnp.fft.fft(y - est) / n
-    #     fft_err = fft_err[:n // 2]
-    #     fft_err = jnp.abs(fft_err)
-    #     all_fft.append(fft_err[::5].flatten())
-    
-    # for i, series in enumerate(all_fft):
-    #     plt.semilogy(series, label=f'Series {i * 5}')  # Label with index
+    n = len(y)
+    all_fft = []
+    for est in metrics_history_gn_low['prediction']:
+        fft_err = jnp.fft.fft(y - est) / n
+        fft_err = fft_err[:n // 2]
+        fft_err = jnp.abs(fft_err)
+        all_fft.append(fft_err[1::5].flatten())
+    all_fft = jnp.array(all_fft).T
+    print(all_fft.shape)
+    for i, series in enumerate(all_fft):
+        plt.semilogy(series, 'x-', label=f'Freq {1 + i * 5}')  # Label with index
 
-    # plt.title('Error in frequency')
-    # plt.legend(loc='upper left', bbox_to_anchor=(1, 1))  # Place legend outside
-    # plt.show()
+
+    plt.title('Error in frequency')
+    plt.xlabel('Training Epoch x 100')
+    plt.ylabel('Frequency error')
+    plt.legend(loc='upper left', bbox_to_anchor=(1, 1))  # Place legend outside
+    plt.tight_layout()
+    plt.show()
 
     # x = jnp.linspace(0, 1, 100).reshape(-1, 1)
     # y =jnp.sin(1 * jnp.pi * x) + 2.1 * jnp.sin(5 * jnp.pi * x)
@@ -338,20 +351,20 @@ def run_exp():
     #                                      )
     # plot_results(state, metrics_history_gn_high, x, y)
 
-    x = jnp.linspace(0, 1, 100).reshape(-1, 1)
-    y =jnp.sin(8 * jnp.pi * x)
-    model = MLP_1D(num_layers=6, hidden_dim=8)
-    state = create_train_state(model, learning_rate=1e-3, momentum=0, optimizer='sgd')
-    state, metrics_history_gn_simple = train_model(state, x, y, num_iterations=5000, obtain_matrices=False,
-                                         lm_schedule=lm_info,
-                                         )
-    plot_results(state, metrics_history_gn_simple, x, y)
+    # x = jnp.linspace(0, 1, 100).reshape(-1, 1)
+    # y =jnp.sin(8 * jnp.pi * x)
+    # model = MLP_1D(num_layers=1, hidden_dim=100)
+    # state = create_train_state(model, learning_rate=1e-3, momentum=0, optimizer='sgd')
+    # state, metrics_history_gn_simple = train_model(state, x, y, num_iterations=5000, obtain_matrices=False,
+    #                                      lm_schedule=lm_info,
+    #                                      )
+    # plot_results(state, metrics_history_gn_simple, x, y)
 
 
-    plt.figure()
-    # plt.semilogy(metrics_history_gn_high['train_loss'])
-    # plt.semilogy(metrics_history_gn_low['train_loss'])
-    plt.semilogy(metrics_history_gn_simple['train_loss'])
+    # plt.figure()
+    # # plt.semilogy(metrics_history_gn_high['train_loss'])
+    # # plt.semilogy(metrics_history_gn_low['train_loss'])
+    # plt.semilogy(metrics_history_gn_simple['train_loss'])
     # ------------------- gn-exact 
 
     plt.show()

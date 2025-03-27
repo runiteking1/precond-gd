@@ -246,8 +246,11 @@ def run_exp():
     opt = Options()
     opt.N = 200
     opt.LR = 1e-3
+    opt.K = [5, 10]
+    opt.A = [1 for _ in range(len(opt.K))]
+
     x, y = make_phased_waves(opt)
-    # plot_wave_and_spectrum(opt, x, y)
+    plot_wave_and_spectrum(opt, x, y)
 
     # print(model.tabulate(
     #     jax.random.key(0), x, compute_flops=True,
@@ -264,7 +267,7 @@ def run_exp():
         # x = jnp.linspace(0, 1, 200).reshape(-1, 1)
         # y = jnp.sin(1 * jnp.pi * x) + jnp.sin(5 * jnp.pi * x)
 
-        model = MLP_1D(num_layers=1, hidden_dim=16)
+        model = MLP_1D(num_layers=1, hidden_dim=64)
         key = jax.random.PRNGKey(seed)
 
         state = create_train_state(model, key, learning_rate=opt.LR, momentum=0, optimizer='sgd')
