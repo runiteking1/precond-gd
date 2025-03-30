@@ -79,6 +79,7 @@ def plot_results_pinns(state, history, model, x):
     plt.figure(figsize=(14, 5))
     plt.subplot(1, 2, 1)
     plt.semilogy(history['train_loss'])
+    plt.ylim((1e-5, 1e1))
     plt.xlabel('Iteration')
     plt.ylabel('Loss')
     plt.title('Training Loss')
