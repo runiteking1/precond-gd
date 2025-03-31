@@ -1,5 +1,5 @@
 flax~=0.10.4
-jax~=0.5.2
+jax[cuda]~=0.5.2
 chex~=0.1.89
 matplotlib~=3.9.4 # Latest version has some errors as of 3/2025
 tqdm
@@ -7,3 +7,4 @@ seaborn
 ipykernel
 jupyter
 notebook
+numpy
