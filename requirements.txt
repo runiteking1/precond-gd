@@ -4,7 +4,7 @@ chex~=0.1.89
 matplotlib~=3.9.4 # Latest version has some errors as of 3/2025
 tqdm
 seaborn
-numpy
+ipykernel
+jupyter
 notebook
-ipython
-tornado
+numpy
