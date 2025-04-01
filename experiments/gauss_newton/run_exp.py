@@ -21,8 +21,10 @@ from model_utils import create_train_state
 from MLP import MLP_1D
 from plotting import plot_results
 from matplotlib import pyplot as plt
+
 jax.config.update("jax_enable_x64", True)
 jax.config.update('jax_default_matmul_precision', 'highest')
+
 
 @chex.dataclass(frozen=True)
 class PrecondData:
@@ -39,10 +41,11 @@ class PrecondData:
     max_iters: int = 100
 
 
-def train_model(state: TrainState, x, y, num_iterations:int = 1_000, 
-        obtain_matrices: bool=False, 
-        lm_schedule: PrecondData = None, batch_size=64
-    ): 
+def train_model(state: TrainState, x, y, num_iterations: int = 1_000,
+                obtain_matrices: bool = False,
+                lm_schedule: PrecondData = None, batch_size=64,
+                x_test=None, y_test=None
+                ):
     @jax.jit
     def model_output(params, x):
         # f(\theta, x); jax defaults to derivs of first component
@@ -59,10 +62,10 @@ def train_model(state: TrainState, x, y, num_iterations:int = 1_000,
         residuals = (preds - y)
 
         # Explicitly calculate loss for metrics
-        loss = 1/n * jnp.sum(residuals ** 2)
-        
+        loss = 1 / n * jnp.sum(residuals ** 2)
+
         # residuals^T jacobian (Might need transpose here in 2D)
-        manual_grad = vjp_fn(residuals * 2 / n)[0] # First term is wrt params
+        manual_grad = vjp_fn(residuals * 2 / n)[0]  # First term is wrt params
 
         return manual_grad, loss, vjp_fn
 
@@ -74,83 +77,84 @@ def train_model(state: TrainState, x, y, num_iterations:int = 1_000,
         # If lm information is passed in
         if lm_info:
             print(f'Running {lm_info.method}')
-            if lm_info.method == 'exp': 
+            if lm_info.method == 'exp':
                 r = 3
                 # keys = jax.random.split(lm_info.key, r)
                 key = jax.random.PRNGKey(0)
                 keys = jax.random.split(key, r)
-                
+
                 temp, back = jax.flatten_util.ravel_pytree(grads)
                 n = len(temp)
                 m = len(x)
 
                 # Generate 
                 Omega = jnp.stack([jax.random.normal(keys[i], (n,)) for i in range(r + 1)], axis=1)
-            
+
                 Q = jnp.zeros((m, 0))
-                for j in range(1, r+1):   
-                    _, y_j = jax.jvp(lambda p:  state.apply_fn(p, x), (state.params,), (back(Omega[:, j]),)) 
+                for j in range(1, r + 1):
+                    _, y_j = jax.jvp(lambda p: state.apply_fn(p, x), (state.params,), (back(Omega[:, j]),))
                     y_j = jnp.squeeze(y_j)
                     # print(y_j, j)
                     # y_j = jnp.dot(A, Omega[:, j])      
                     # print(y_j, j)
-            
+
                     y_j = y_j - jnp.dot(Q, jnp.dot(Q.T, y_j))
                     y_j = y_j / jnp.linalg.norm(y_j)
                     Q = jnp.hstack((Q, y_j[:, None]))
-                    
-                def apply_vjp_and_flatten(column): # Define a function that applies vjp_fn to a single column and flattens the result
-                    column = column[:, jnp.newaxis] 
+
+                def apply_vjp_and_flatten(
+                        column):  # Define a function that applies vjp_fn to a single column and flattens the result
+                    column = column[:, jnp.newaxis]
                     flat, _ = jax.flatten_util.ravel_pytree(vjp_fn(column)[0])
                     return flat
 
                 # Use vmap to vectorize the function over the columns of Q
-                B = jax.vmap(apply_vjp_and_flatten, in_axes=1, out_axes=0)(Q)    
-                
+                B = jax.vmap(apply_vjp_and_flatten, in_axes=1, out_axes=0)(Q)
+
                 # Step 5
                 Uhat, s_est, vh_est = jnp.linalg.svd(B)
-                
+
                 # Step 6
                 # U_est = Q @ Uhat
 
                 # Compute inverse
                 threshold = 1e-3
-                s_inv = jnp.where(s_est > lm_info.thresh, s_est**-2, threshold)
-                
+                s_inv = jnp.where(s_est > lm_info.thresh, s_est ** -2, threshold)
+
                 # Apply to grads
                 # print(flatten_grad(grads))
                 flattened, back = jax.flatten_util.ravel_pytree(grads)
                 my_change = vh_est[0:len(s_inv), :].T @ jnp.diag(s_inv) @ vh_est[0:len(s_inv), :] @ flattened
                 grads = back(my_change)
                 lm_data = None
-                
-            elif lm_info.method == 'poly': 
+
+            elif lm_info.method == 'poly':
                 # P = tr(B)I - B where B is J^TJ ; don't solve anything
                 jacobian_fn = flatten_jacobian(jax.jacrev(model_output)(state.params, x), x)
                 B = jacobian_fn.T @ jacobian_fn
                 # B2 = B @ B
-    
+
                 flattened, back = jax.flatten_util.ravel_pytree(grads)
                 grads = back(
                     (jnp.trace(B) * jnp.eye(B.shape[0]) - B) @ flattened
                     # (.5 * ((jnp.trace(B) ** 2) - jnp.trace(B2)) * jnp.eye(B.shape[0]) - jnp.trace(B) * B + B2) @ flattened
                 )
                 lm_data = None
-            elif lm_info.method == 'gn-exact': 
+            elif lm_info.method == 'gn-exact':
                 # TODO: try https://arxiv.org/pdf/1905.11675
                 # algorithim 1
                 # move *beforeeee* 
-                
+
                 jacobian_fn = flatten_jacobian(jax.jacrev(model_output)(state.params, x), x)
                 # print(jacobian_fn[0, :])
                 # Compute SVD
-                u, s, vh = jnp.linalg.svd(jacobian_fn, full_matrices=False) 
-    
+                u, s, vh = jnp.linalg.svd(jacobian_fn, full_matrices=False)
+
                 # Compute inverse
                 threshold = 1e-3
-                s_inv = jnp.where(s > lm_info.thresh, s**-2, threshold)
+                s_inv = jnp.where(s > lm_info.thresh, s ** -2, threshold)
                 # print(f'{s_inv=}')
-    
+
                 # Apply to grads
                 # print(flatten_grad(grads))
                 flattened, back = jax.flatten_util.ravel_pytree(grads)
@@ -158,21 +162,21 @@ def train_model(state: TrainState, x, y, num_iterations:int = 1_000,
                 my_change = vh.T @ jnp.diag(s_inv) @ vh @ flattened
                 grads = back(my_change)
                 lm_data = None
-                
-            elif lm_info.method == 'smw':            
+
+            elif lm_info.method == 'smw':
                 # For ease of access
                 lamb = lm_info.lamb
-    
+
                 # J \vec k
-                _, jvp_output = jax.jvp(lambda p: state.apply_fn(p, x), (state.params,), (grads,)) 
-    
+                _, jvp_output = jax.jvp(lambda p: state.apply_fn(p, x), (state.params,), (grads,))
+
                 # Construct and compute (I + 1/lambda JJ^T)^{-1} (Jv)
                 jacobian_fn = flatten_jacobian(jax.jacrev(model_output)(state.params, x), x)
                 mat = jacobian_fn @ jacobian_fn.T
                 out = jnp.linalg.solve(jnp.eye(mat.shape[0]) + 1 / lamb * mat, jvp_output / (lamb ** 2))
-    
+
                 adjustment = vjp_fn(out)[0]
-    
+
                 grads = tree_map(lambda a, b: 1 / lamb * a - b, grads, adjustment)
                 lm_data = None
             elif lm_info.method == 'cg':
@@ -182,24 +186,24 @@ def train_model(state: TrainState, x, y, num_iterations:int = 1_000,
                     # Compute J^T J k using jvp and vjp
                     _, jvp_output = jax.jvp(lambda p: state.apply_fn(p, x), (state.params,), (k,))
                     Av = vjp_fn(jvp_output)[0]
-        
+
                     # Add the regularization term lambda * k
                     Av = tree_map(lambda a, b: a + lm_info.lamb * b, Av, k)
                     return Av
-                    
+
                 grads, lm_data = conjugate_gradient(matvec, grads, state, x, max_iter=lm_info.max_iters)
-            else: 
+            else:
                 raise Exception('Not a method')
         else:
             lm_data = None
-            
+
         # Apply the gradient update
         state = state.apply_gradients(grads=grads)
 
         return state, loss, lm_data
 
     @jax.jit
-    def get_eigs(state, x, return_matrix: bool=True):
+    def get_eigs(state, x, return_matrix: bool = True):
         """
         Only really for diagnostics
         """
@@ -212,11 +216,12 @@ def train_model(state: TrainState, x, y, num_iterations:int = 1_000,
             return {'eigs': eigs, 'mat': jacobian_fn}
         else:
             return {'eigs': eigs}
-    
+
     metrics_history = {
         'train_loss': [], 'eigs': [], 'mat': [],
         'lm_data': [],
-        'prediction': []
+        'prediction': [],
+        'test_loss': [],
     }
 
     rng_key = jax.random.PRNGKey(0)
@@ -227,12 +232,12 @@ def train_model(state: TrainState, x, y, num_iterations:int = 1_000,
 
         epoch_loss = 0
         num_batches = 0
-        
+
         for x_batch, y_batch in batch_data(x, y, batch_size, subkey):
             # print(x_batch, y_batch)
             if lm_schedule and epoch >= lm_schedule.epoch:
                 state, loss, lm_data = train_step(state, x_batch, y_batch, lm_schedule)
-            else: 
+            else:
                 state, loss, lm_data = train_step(state, x_batch, y_batch)
             epoch_loss += loss
             num_batches += 1
@@ -242,11 +247,10 @@ def train_model(state: TrainState, x, y, num_iterations:int = 1_000,
         metrics_history['train_loss'].append(avg_loss)
         metrics_history['lm_data'].append(lm_data)
 
-
-        if (epoch % 100) == 0: 
+        if (epoch % 100) == 0:
             if obtain_matrices:
                 out = get_eigs(state, x)
-                
+
                 for key in out.keys():
                     metrics_history[key].append(out[key])
 
@@ -254,9 +258,18 @@ def train_model(state: TrainState, x, y, num_iterations:int = 1_000,
                 state.apply_fn(state.params, x)
             )
 
+            # Get test accuracy
+            if x_test is not None:
+                test_residuals = y_test - state.apply_fn(
+                    state.params, x_test
+                )
+                metrics_history['test_loss'].append(
+                    1 / len(x_test) * jnp.sum(test_residuals ** 2)
+                )
 
     return state, metrics_history
-    
+
+
 def run_exp():
     print(jax.default_backend())
 
@@ -306,7 +319,7 @@ def run_exp():
     for k in range(1, n + 1):
         y += k / n * jnp.sin((2 * k + 1) * jnp.pi * x - k)
 
-    model = MLP_1D(num_layers=2,hidden_dim=80)
+    model = MLP_1D(num_layers=2, hidden_dim=80)
     # model = MLP_1D(num_layers=8,hidden_dim=24)
     # key = jax.random.PRNGKey(0)
     lm_info = PrecondData(
@@ -316,9 +329,9 @@ def run_exp():
         # key=key
     )
     state = create_train_state(model, learning_rate=1e-2, momentum=0, optimizer='sgd')
-    state, metrics_history_gn_low = train_model(state, x, y, num_iterations=10000, obtain_matrices=False, 
-                                        lm_schedule=lm_info, batch_size=100
-                                        )
+    state, metrics_history_gn_low = train_model(state, x, y, num_iterations=10000, obtain_matrices=False,
+                                                lm_schedule=lm_info, batch_size=100
+                                                )
     plot_results(state, metrics_history_gn_low, x, y)
     plt.show()
 
@@ -333,7 +346,6 @@ def run_exp():
     print(all_fft.shape)
     for i, series in enumerate(all_fft):
         plt.semilogy(series, 'x-', label=f'Freq {1 + i * 5}')  # Label with index
-
 
     plt.title('Error in frequency')
     plt.xlabel('Training Epoch x 100')
@@ -360,7 +372,6 @@ def run_exp():
     #                                      )
     # plot_results(state, metrics_history_gn_simple, x, y)
 
-
     # plt.figure()
     # # plt.semilogy(metrics_history_gn_high['train_loss'])
     # # plt.semilogy(metrics_history_gn_low['train_loss'])
@@ -368,7 +379,6 @@ def run_exp():
     # ------------------- gn-exact 
 
     plt.show()
-
 
 
 if __name__ == '__main__':
