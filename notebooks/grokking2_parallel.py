@@ -1,6 +1,7 @@
+import jax
 import jax.numpy as jnp
 from jax import random, jit, value_and_grad, jvp, vjp, jacrev
-import jax
+from jax.flatten_util import ravel_pytree
 from flax.training import train_state
 import optax
 from flax import linen as nn
@@ -48,7 +49,7 @@ tx = optax.sgd(learning_rate=eta)
 # Alphas and distribution
 alphas = jnp.array([2**(-5), 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16, 32])[:4]
 local_alphas = alphas[rank::size]
-iterations = 100
+iterations = 100 #00
 
 local_results = []
 
@@ -62,8 +63,10 @@ for i, alpha in enumerate(local_alphas):
 
     @jit
     def loss_fn(params, x, y, init_params):
-        pred = apply_fn(params, x) - apply_fn(init_params, x)
+        pred = apply_fn(params, x) - apply_fn(init_params, x) - y
         return jnp.mean(pred**2 / alpha**2)
+
+
 
     @jit
     def train_step(state, init_params):
@@ -80,6 +83,7 @@ for i, alpha in enumerate(local_alphas):
         grads = jax.tree.map(lambda a, b: 1 / lamb * a - b, grads, adjustment)
 
         return state.apply_gradients(grads=grads), loss
+
 
     tr_losses = []
     te_losses = []
