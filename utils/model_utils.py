@@ -21,7 +21,7 @@ def create_train_state(module, rng=None, learning_rate=1e-3, momentum=.9, optimi
     elif optimizer == 'adam':
         tx = optax.adam(learning_rate)
     else:
-        tx = optax.sgd(learning_rate)
+        tx = optimizer
 
     return TrainState.create(
         apply_fn=module.apply,
