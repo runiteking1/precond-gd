@@ -1,0 +1,10 @@
+rank=5: alpha=4.00e+00, train loss: 5.92e-10 | test loss: 1.12e+00 | time = 00:00:48
+rank=1: alpha=2.50e-01, train loss: 1.38e-08 | test loss: 4.91e-02 | time = 00:00:51
+rank=6: alpha=8.00e+00, train loss: 3.27e-10 | test loss: 1.56e+00 | time = 00:00:49
+rank=7: alpha=1.60e+01, train loss: 3.98e-10 | test loss: 1.94e+00 | time = 00:00:58
+rank=2: alpha=5.00e-01, train loss: 1.26e-08 | test loss: 1.41e-01 | time = 00:00:53
+rank=4: alpha=2.00e+00, train loss: 1.94e-09 | test loss: 6.85e-01 | time = 00:00:53
+rank=0: alpha=3.12e-02, train loss: 2.54e-03 | test loss: 2.86e-01 | time = 00:00:53
+rank=8: alpha=3.20e+01, train loss: 9.78e-10 | test loss: 2.24e+00 | time = 00:00:59
+rank=3: alpha=1.00e+00, train loss: 6.36e-09 | test loss: 3.42e-01 | time = 00:00:52
+total_time=00:01:00
