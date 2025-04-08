@@ -44,7 +44,8 @@ class PrecondData:
 def train_model(state: TrainState, x, y, num_iterations: int = 1_000,
                 obtain_matrices: bool = False,
                 lm_schedule: PrecondData = None, batch_size=64,
-                x_test=None, y_test=None
+                x_test=None, y_test=None,
+                num_track: int = 100
                 ):
     @jax.jit
     def model_output(params, x):
@@ -247,7 +248,7 @@ def train_model(state: TrainState, x, y, num_iterations: int = 1_000,
         metrics_history['train_loss'].append(avg_loss)
         metrics_history['lm_data'].append(lm_data)
 
-        if (epoch % 100) == 0:
+        if (epoch % num_track) == 0:
             if obtain_matrices:
                 out = get_eigs(state, x)
 
