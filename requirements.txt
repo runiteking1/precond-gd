@@ -8,3 +8,4 @@ ipykernel
 jupyter
 notebook
 numpy
+tensorflow_datasets
