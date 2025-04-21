@@ -2,10 +2,11 @@ flax~=0.10.4
 jax[cuda]~=0.5.2
 chex~=0.1.89
 matplotlib~=3.9.4 # Latest version has some errors as of 3/2025
-tqdm
-seaborn
+tqdm~=4.67.1
+seaborn~=0.13.2
 ipykernel
 jupyter
 notebook
-numpy
+numpy~=2.2.3
 tensorflow_datasets
+optax~=0.2.4
