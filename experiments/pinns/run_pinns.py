@@ -52,6 +52,21 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
         # Grad wrt x
         grad_u = jax.grad(u_fn, argnums=1)
 
+
+        # Create zero tangents for the parameters (matching structure)
+        zero_params = jax.tree_util.tree_map(jnp.zeros_like, params)
+        tangent_xx_dir = jnp.array([1.0, 0.0], dtype=x.dtype) # Direction for d/dx
+        tangent_yy_dir = jnp.array([0.0, 1.0], dtype=x.dtype) # Direction for d/dy
+
+        # Compute u_xx using JVP
+        _, grad_u_xx_tangent = jax.jvp(grad_u, (params, x), (zero_params, tangent_xx_dir))
+        u_xx = grad_u_xx_tangent[0]
+        # Compute u_yy using JVP
+        _, grad_u_yy_tangent = jax.jvp(grad_u, (params, x), (zero_params, tangent_yy_dir))
+        u_yy = grad_u_yy_tangent[1]
+
+
+        """
         # Hessian wrt x TODO: is this efficient?
         hessian_u = jax.jacfwd(
             jax.jacrev(u_fn, argnums=1), argnums=1
@@ -64,6 +79,8 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
         # Extract Laplacian
         u_xx = u_hessian[0, 0]
         u_yy = u_hessian[1, 1]
+
+        """
 
         return -u_xx - u_yy - forcing_function(x)
 
