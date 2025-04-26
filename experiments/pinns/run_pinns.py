@@ -9,12 +9,13 @@ from jax.tree import map as tree_map
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
-from MLP import MLP_1D
-from cg import conjugate_gradient
-from data_utils import batch_data_pinns, generate_training_data
-from jacobian_tools import flatten_jacobian
-from model_utils import create_train_state
-from plotting import plot_results_pinns
+from precond_gd.models.MLP import MLP_1D
+from precond_gd.utils.jacobian_tools import flatten_jacobian
+from precond_gd.utils.model_utils import create_train_state
+from precond_gd.utils.plotting import plot_results_pinns
+from precond_gd.data.data_utils import batch_data_pinns, generate_training_data
+from precond_gd.utils.cg import conjugate_gradient
+
 
 # os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 # os.environ['JAX_PLATFORM_NAME'] = 'cpu'
@@ -66,7 +67,7 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
 
         return -u_xx - u_yy - forcing_function(x)
 
-    # Create R(u(\theta, x)) for the PDE residual 
+    # Create R(u(\theta, x)) for the PDE residual
     pde_output = jax.vmap(
         model_single, in_axes=(None, 0)  # Only stack xs, and not params
     )
@@ -132,7 +133,7 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
                 n = len(temp)
                 m = len(x)
 
-                # Generate 
+                # Generate
                 Omega = jnp.stack([jax.random.normal(keys[i], (n,)) for i in range(r + 1)], axis=1)
 
                 Q = jnp.zeros((m, 0))
@@ -140,7 +141,7 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
                     _, y_j = jax.jvp(lambda p: state.apply_fn(p, x), (state.params,), (back(Omega[:, j]),))
                     y_j = jnp.squeeze(y_j)
                     # print(y_j, j)
-                    # y_j = jnp.dot(A, Omega[:, j])      
+                    # y_j = jnp.dot(A, Omega[:, j])
                     # print(y_j, j)
 
                     y_j = y_j - jnp.dot(Q, jnp.dot(Q.T, y_j))
@@ -246,7 +247,7 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
 
             elif lm_info.method == 'cg':
                 # Define mat-vec for (\lambda I + J^T J)
-                # Matrix-free implementation; we use vjp_fn computed above and jvp is cheap 
+                # Matrix-free implementation; we use vjp_fn computed above and jvp is cheap
                 def matvec(k, state, x):
                     # Compute J^T J k using jvp and vjp
                     _, jvp_output = jax.jvp(lambda p: state.apply_fn(p, x), (state.params,), (k,))
