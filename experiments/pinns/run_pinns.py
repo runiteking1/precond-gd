@@ -39,11 +39,15 @@ class PrecondData:
     max_iters: int = 100
 
 
-def train_model(state: TrainState, x, num_iterations: int = 1_000,
+def train_model(state: TrainState, problem_data : any, num_iterations: int = 1_000,
                 forcing_function=lambda x: 2 * jnp.pi * jnp.sin(jnp.pi * x[0]) * jnp.sin(jnp.pi * x[1]),
                 obtain_matrices: bool = False,
-                lm_schedule: PrecondData = None, batch_size=64
+                lm_schedule: PrecondData = None, batch_size=64,
+                metrics_file: str = None
                 ):
+
+    x = problem_data
+
     @jax.jit
     def model_single(params, x):
         # Define eval of u
@@ -233,6 +237,7 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
                 lm_data = None
 
             elif lm_info.method == 'smw':
+                """
                 # For ease of access
                 lamb = lm_info.lamb
 
@@ -261,6 +266,78 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
 
                 grads = tree_map(lambda a, b, c: 1 / lamb * a - (b + c), grads, adjustment_pde, adjustment_bnd)
                 lm_data = None
+                """
+
+                # For ease of access
+                lamb = lm_info.lamb
+
+                # --- Calculate J @ grads (rhs component) ---
+                # Jvp is generally efficient
+                _, jvp_output_pde = jax.jvp(
+                    lambda p: pde_output(p, interior_points), (state.params,), (grads,)
+                )
+                _, jvp_output_bnd = jax.jvp(
+                    lambda p: bnd_output(p, boundary_points), (state.params,), (grads,)
+                )
+                jvp_output = jnp.concatenate((jvp_output_pde, jvp_output_bnd))
+                # This is the right-hand side vector for the linear system to solve
+                b = jvp_output / (lamb ** 2)
+                # --- End rhs calculation ---
+
+                # --- Construct Jacobian J ---
+                # This step (jacrev) can still be expensive
+                jacobian_fn_pde = flatten_jacobian(
+                    jax.jacrev(pde_output)(state.params, interior_points), interior_points
+                )
+                jacobian_fn_bnd = flatten_jacobian(
+                    jax.jacrev(bnd_output)(state.params, boundary_points), boundary_points
+                )
+                jacobian_fn = jnp.concatenate((jacobian_fn_pde, jacobian_fn_bnd))
+                # --- End Jacobian construction ---
+
+                # --- Form System Matrix M = I + (1/lambda) J J^T ---
+                # This matrix multiplication is expensive: O(N_points^2 * N_params)
+                mat_jjT = jacobian_fn @ jacobian_fn.T
+                n_points = mat_jjT.shape[0]
+                # Ensure identity matrix has the same dtype as mat_jjT
+                identity = jnp.eye(n_points, dtype=mat_jjT.dtype)
+                M = identity + (1.0 / lamb) * mat_jjT
+                # --- End Matrix Formation ---
+
+                # --- Solve M @ out = b using Cholesky with fallback ---
+                # Use checkify for more robust error handling within JIT (optional but good practice)
+                # err, out = checkify.checkify(lambda M, b: _solve_cholesky_fallback(M, b),
+                #                             errors=checkify.user_checks)
+                # status = err.throw() # Raise error if check failed (e.g., matrix singular)
+                # # OR: A simpler try/except suitable if not deeply nested in complex JIT
+                try:
+                    # Attempt Cholesky decomposition M = L @ L.T
+                    L = jax.numpy.linalg.cholesky(M)
+                    # Solve L @ y = b (forward substitution)
+                    y = jax.scipy.linalg.solve_triangular(L, b, lower=True, check_finite=False)
+                    # Solve L.T @ out = y (backward substitution)
+                    out = jax.scipy.linalg.solve_triangular(L.T, y, lower=False, check_finite=False)
+                    # If successful, 'out' holds the solution.
+                    # Optionally: print or log outside JIT scope that Cholesky was used
+                    # print("Cholesky solve succeeded.")
+                except Exception as e:
+                    # Fallback if Cholesky fails (e.g., matrix not positive definite numerically)
+                    # Optionally: print or log outside JIT scope about fallback
+                    # print("Cholesky failed, falling back to jnp.linalg.solve.")
+                    out = jnp.linalg.solve(M, b)
+                # --- End Solve ---
+
+                # --- Apply VJPs to get the adjustment term ---
+                # VJPs are generally efficient
+                adjustment_pde = vjp_fn_pde(out[0:len(interior_points)])[0]
+                adjustment_bnd = vjp_fn_bnd(out[len(interior_points):])[0]
+                # --- End VJP ---
+
+                # --- Final gradient update ---
+                grads = tree_map(lambda g, adj_p, adj_b: (1.0 / lamb) * g - (adj_p + adj_b),
+                                 grads, adjustment_pde, adjustment_bnd)
+                lm_data = None
+
 
             elif lm_info.method == 'cg':
                 # Define mat-vec for (\lambda I + J^T J)
@@ -328,6 +405,26 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
             #     state.apply_fn(state.params, x_interio)
             # )
             pass
+
+
+    if metrics_file:
+        import pickle
+        import numpy as np
+
+        file_name = f"{metrics_file}.pkl"
+        print(f"\nTraining complete. Saving metrics to {file_name}...")
+        try:
+            metrics_to_save = tree_map(lambda leaf: np.asarray(leaf) if isinstance(leaf, jax.Array) else leaf,
+                                       metrics_history)
+
+            with open(file_name, 'wb') as f:
+                pickle.dump(metrics_to_save, f)
+            print("Metrics saved successfully.")
+        except IOError as e:
+            print(f"Error: Could not write metrics to file {file_name}. IOError: {e}")
+        except Exception as e:
+            print(f"Error: An unexpected error occurred while saving metrics: {e}")
+
 
     return state, metrics_history
 
