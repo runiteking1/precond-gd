@@ -69,8 +69,8 @@ for int_scale in interior_scales:
             problem_data = (interior_points, boundary_points)
 
             # Unique run name
-            name = f"{base_path}/sgd_fx_{n}_fy_{m}_int{num_interior}_bnd{num_boundary}"
-            metrics_file = name
+            name = f"{base_path}/fx_{n}_fy_{m}_int{num_interior}_bnd{num_boundary}"
+            metrics_file = name + ".pkl"
 
             # Check if already computed
             if os.path.exists(metrics_file):
