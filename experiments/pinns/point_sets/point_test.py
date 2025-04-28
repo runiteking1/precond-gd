@@ -69,7 +69,7 @@ for int_scale in interior_scales:
             problem_data = (interior_points, boundary_points)
 
             # Unique run name
-            name = f"{base_path}/sgd_fx_{n}_fy_{m}_int{num_interior}_bnd{num_boundary}"
+            name = f"{base_path}/fx_{n}_fy_{m}_int{num_interior}_bnd{num_boundary}"
             metrics_file = name + ".pkl"
 
             # Check if already computed
@@ -83,7 +83,7 @@ for int_scale in interior_scales:
             # Model and optimizer
             model = MLP_1D(1, dims)
             dummy_input = jnp.ones((1, 2))
-            state = create_train_state(model, learning_rate=lr, momentum=o, optimizer='sgd', shape=dummy_input)
+            state = create_train_state(model, learning_rate=lr, momentum=0, optimizer='sgd', shape=dummy_input)
 
             # Train
             state, metrics = train_model(
