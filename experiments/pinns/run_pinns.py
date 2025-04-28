@@ -41,6 +41,7 @@ class PrecondData:
 
 def train_model(state: TrainState, problem_data : any, num_iterations: int = 1_000,
                 forcing_function=lambda x: 2 * jnp.pi * jnp.sin(jnp.pi * x[0]) * jnp.sin(jnp.pi * x[1]),
+                solution_function=None,
                 obtain_matrices: bool = False,
                 lm_schedule: PrecondData = None, batch_size=64,
                 metrics_file: str = None
@@ -362,11 +363,22 @@ def train_model(state: TrainState, problem_data : any, num_iterations: int = 1_0
 
         return state, loss_bnd + loss_pde, lm_data
 
+
+    interior_points, boundary_points = problem_data
+
+    if solution_function is not None:
+        exact_solution_fn = jax.vmap(solution_function)
+        exact_interior = exact_solution_fn(interior_points)
+        exact_boundary = exact_solution_fn(boundary_points)
+
     metrics_history = {
-        'train_loss': [], 'eigs': [], 'mat': [],
+        'train_loss': [],
+        'l2_error': [], 'l2_error_pde': [], 'l2_error_bc': [],
+        'eigs': [], 'mat': [],
         'lm_data': [],
         'prediction': []
     }
+
 
     rng_key = jax.random.PRNGKey(0)
 
@@ -393,7 +405,22 @@ def train_model(state: TrainState, problem_data : any, num_iterations: int = 1_0
         metrics_history['lm_data'].append(lm_data)
         progress_bar.set_postfix(loss=f'{avg_loss:.4f}')
 
+
         if (epoch % 100) == 0:
+
+            if solution_function is not None:
+                preds_interior = jax.vmap(lambda x: jnp.squeeze(state.apply_fn(state.params, x)))(interior_points)
+                preds_boundary = jax.vmap(lambda x: jnp.squeeze(state.apply_fn(state.params, x)))(boundary_points)
+
+                error_interior = jnp.sqrt(jnp.mean((preds_interior - exact_interior) ** 2))
+                error_boundary = jnp.sqrt(jnp.mean((preds_boundary - exact_boundary) ** 2))
+                total_error = (error_interior + error_boundary) / 2
+
+                metrics_history['l2_error'].append(total_error)
+                metrics_history['l2_error_pde'].append(error_interior)
+                metrics_history['l2_error_bc'].append(error_boundary)
+                #print(f'Epoch {epoch}: L2 Error {total_error:.5e}')
+
             if obtain_matrices:
                 pass
                 # out = get_eigs(state, x)
