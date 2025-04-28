@@ -14,7 +14,7 @@ jax.config.update('jax_default_matmul_precision', 'highest')
 
 
 # Settings
-base_path = "./grokking_runs"
+base_path = "./sgd"
 os.makedirs(base_path, exist_ok=True)
 
 # Sweep parameters
