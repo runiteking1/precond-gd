@@ -12,34 +12,33 @@ def batch_data(x, y, batch_size, rng_key):
         batch_indices = indices[start_idx:end_idx]
         yield x[batch_indices], y[batch_indices]
 
+
 def batch_data_pinns(x, batch_size, rng_key):
     """
     Yield batches of data for PINNs.
-    If batch_size < 0, do full batch.
+    If batch_size < 0, do full batch without permutation.
     """
     x_int, x_bnd = x
     num_samples_int = x_int.shape[0]
     num_samples_bnd = x_bnd.shape[0]
     ratio = num_samples_int / num_samples_bnd
 
+    if batch_size < 0:
+        # Full batch mode, no permutation needed
+        yield x_int, x_bnd
+        return
+
+    # Permute indices for minibatch mode
     indices_int = jax.random.permutation(rng_key, num_samples_int)
     rng_key, _ = jax.random.split(rng_key)
     indices_bnd = jax.random.permutation(rng_key, num_samples_bnd)
 
+    batch_size_int = int(jnp.round(batch_size * ratio / (1 + ratio)))
+    batch_size_bnd = batch_size - batch_size_int
 
-    if batch_size < 0:
-        batch_size_int = num_samples_int
-        batch_size_bnd = num_samples_bnd
-    else:
-        # Calculate batch sizes
-        batch_size_int = int(jnp.round(batch_size * ratio / (1 + ratio)))
-        batch_size_bnd = batch_size - batch_size_int
+    batch_size_int = max(batch_size_int, 1)
+    batch_size_bnd = max(batch_size_bnd, 1)
 
-        # Probably not needed
-        batch_size_int = max(batch_size_int, 1)
-        batch_size_bnd = max(batch_size_bnd, 1)
-
-    # Yield batches
     num_batches = max(num_samples_int // batch_size_int, num_samples_bnd // batch_size_bnd)
     for i in range(num_batches):
         start_idx_int = i * batch_size_int

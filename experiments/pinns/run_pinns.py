@@ -399,6 +399,10 @@ def train_model(state: TrainState, problem_data : any, num_iterations: int = 1_0
             epoch_loss += loss
             num_batches += 1
 
+        if batch_size < 0:
+            assert num_batches == 1, f"num_batches has to be 1 in full-batch case: recorded={num_batches}"
+
+
         # Compute the average loss for the epoch
         avg_loss = epoch_loss / num_batches
         metrics_history['train_loss'].append(avg_loss)

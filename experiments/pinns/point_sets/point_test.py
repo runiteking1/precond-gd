@@ -26,8 +26,9 @@ os.makedirs(base_path, exist_ok=True)
 
 # Sweep parameters
 interior_scales = [1, 2, 4, 12]  # scale num_interior
-boundary_scales = [1, 2, 4]     # scale num_boundary
-NM = [(1,1), (2,2)]          # sin(pi x) sin(pi y) frequencies
+boundary_scales = [1, 2, 4, 12]     # scale num_boundary
+NM = [#(1,1),
+      (2,2)]          # sin(pi x) sin(pi y) frequencies
 dims = 256                  # model width
 batch_size = -1             # full batch (-1 means full batch)
 
