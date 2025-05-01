@@ -66,8 +66,9 @@ for int_scale in interior_scales:
             # Problem setup
             num_interior = 20 * int_scale
             num_boundary = 20 * bnd_scale
-            interior_points, boundary_points = generate_training_data(num_interior, num_boundary)
+            interior_points, boundary_points = generate_training_data(num_interior, num_boundary, seed=5)
             problem_data = (interior_points, boundary_points)
+            test_data = generate_training_data(num_interior, num_boundary, seed=7)
 
             # Unique run name
             name = f"{base_path}/fx_{n}_fy_{m}_int{num_interior}_bnd{num_boundary}"
@@ -90,6 +91,7 @@ for int_scale in interior_scales:
             state, metrics = train_model(
                 state,
                 problem_data=problem_data,
+                test_data=test_data,
                 forcing_function=get_forcing_fxn(n, m),
                 solution_function=get_solution_fxn(n, m),
                 num_iterations=num_iterations,

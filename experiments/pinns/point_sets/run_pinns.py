@@ -39,7 +39,10 @@ class PrecondData:
     max_iters: int = 100
 
 
-def train_model(state: TrainState, problem_data : any, num_iterations: int = 1_000,
+def train_model(state: TrainState,
+                problem_data : any,
+                test_data : any = None,
+                num_iterations: int = 1_000,
                 forcing_function=lambda x: 2 * jnp.pi * jnp.sin(jnp.pi * x[0]) * jnp.sin(jnp.pi * x[1]),
                 solution_function=None,
                 obtain_matrices: bool = False,
@@ -392,15 +395,21 @@ def train_model(state: TrainState, problem_data : any, num_iterations: int = 1_0
 
 
     interior_points, boundary_points = problem_data
+    t_interior_points, t_boundary_points = test_data if isinstance(test_data, tuple) else (None, None)
 
     if solution_function is not None:
         exact_solution_fn = jax.vmap(solution_function)
         exact_interior = exact_solution_fn(interior_points)
         exact_boundary = exact_solution_fn(boundary_points)
 
+        if isinstance(test_data, tuple):
+            t_exact_interior = exact_solution_fn(t_interior_points)
+            t_exact_boundary = exact_solution_fn(t_boundary_points)
+
     metrics_history = {
         'train_loss': [],
         'l2_error': [], 'l2_error_pde': [], 'l2_error_bc': [],
+        't_l2_error': [], 't_l2_error_pde': [], 't_l2_error_bc': [],
         'eigs': [], 'mat': [],
         'lm_data': [],
         'prediction': []
@@ -446,6 +455,22 @@ def train_model(state: TrainState, problem_data : any, num_iterations: int = 1_0
                 metrics_history['l2_error'].append(total_error)
                 metrics_history['l2_error_pde'].append(error_interior)
                 metrics_history['l2_error_bc'].append(error_boundary)
+
+                # test data error
+                if isinstance(test_data, tuple):
+                    preds_interior = jax.vmap(lambda x: jnp.squeeze(state.apply_fn(state.params, x)))(t_interior_points)
+                    preds_boundary = jax.vmap(lambda x: jnp.squeeze(state.apply_fn(state.params, x)))(t_boundary_points)
+
+                    error_interior = jnp.sqrt(jnp.mean((preds_interior - t_exact_interior) ** 2))
+                    error_boundary = jnp.sqrt(jnp.mean((preds_boundary - t_exact_boundary) ** 2))
+                    total_error = (error_interior + error_boundary) / 2
+
+                    metrics_history['t_l2_error'].append(total_error)
+                    metrics_history['t_l2_error_pde'].append(error_interior)
+                    metrics_history['t_l2_error_bc'].append(error_boundary)
+
+
+
                 #print(f'Epoch {epoch}: L2 Error {total_error:.5e}')
 
             if obtain_matrices:
