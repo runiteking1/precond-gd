@@ -42,7 +42,7 @@ elif training_mode == 'smw':
     lm_info = PrecondData(method='smw', epoch=0, lamb=1e-1)
     num_iterations = 10_000
 elif training_mode == 'gn':
-    lr = 5e-3
+    lr = 5e-4
     lm_info = PrecondData(method='gn-exact', epoch=0, thresh=1e-3)
     num_iterations = 5_000
 else:
@@ -72,7 +72,7 @@ for int_scale in interior_scales:
 
             # Unique run name
             name = f"{base_path}/fx_{n}_fy_{m}_int{num_interior}_bnd{num_boundary}"
-            metrics_file = name + ".pkl"
+            metrics_file = name 
 
             # Check if already computed
             if os.path.exists(metrics_file):
