@@ -407,7 +407,7 @@ def train_model(state: TrainState, problem_data : any, num_iterations: int = 1_0
         avg_loss = epoch_loss / num_batches
         metrics_history['train_loss'].append(avg_loss)
         metrics_history['lm_data'].append(lm_data)
-        progress_bar.set_postfix(loss=f'{avg_loss:.4f}')
+        progress_bar.set_postfix(loss=f'{avg_loss:1.4e}')
 
 
         if (epoch % 100) == 0:
