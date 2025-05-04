@@ -100,6 +100,7 @@ def train_model(state: TrainState, problem_data : any, num_iterations: int = 1_0
 
     @jax.jit
     def compute_manual_gradient_bnd(state, x):
+        """Assumes homogeneous Dirichlet BCs"""
         # For MSE
         n = x.shape[0]
 
