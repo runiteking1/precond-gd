@@ -5,3 +5,4 @@ __pycache__/
 precond_gd.egg-info/
 *.pyc
 .DS_Store
+*.pkl
