@@ -39,12 +39,17 @@ class PrecondData:
     max_iters: int = 100
 
 
-def train_model(state: TrainState, x, num_iterations: int = 1_000,
+def train_model(state: TrainState, problem_data : any, num_iterations: int = 1_000,
                 forcing_function=lambda x: 2 * jnp.pi * jnp.sin(jnp.pi * x[0]) * jnp.sin(jnp.pi * x[1]),
+                solution_function=None,
                 obtain_matrices: bool = False,
                 lm_schedule: PrecondData = None, batch_size=64,
+                metrics_file: str = None
                 get_analytics: bool = False
                 ):
+
+    x = problem_data
+
     @jax.jit
     def model_single(params, x):
         # Define eval of u
@@ -53,6 +58,21 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
         # Grad wrt x
         grad_u = jax.grad(u_fn, argnums=1)
 
+
+        # Create zero tangents for the parameters (matching structure)
+        zero_params = jax.tree_util.tree_map(jnp.zeros_like, params)
+        tangent_xx_dir = jnp.array([1.0, 0.0], dtype=x.dtype) # Direction for d/dx
+        tangent_yy_dir = jnp.array([0.0, 1.0], dtype=x.dtype) # Direction for d/dy
+
+        # Compute u_xx using JVP
+        _, grad_u_xx_tangent = jax.jvp(grad_u, (params, x), (zero_params, tangent_xx_dir))
+        u_xx = grad_u_xx_tangent[0]
+        # Compute u_yy using JVP
+        _, grad_u_yy_tangent = jax.jvp(grad_u, (params, x), (zero_params, tangent_yy_dir))
+        u_yy = grad_u_yy_tangent[1]
+
+
+        """
         # Hessian wrt x TODO: is this efficient?
         hessian_u = jax.jacfwd(
             jax.jacrev(u_fn, argnums=1), argnums=1
@@ -65,6 +85,8 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
         # Extract Laplacian
         u_xx = u_hessian[0, 0]
         u_yy = u_hessian[1, 1]
+
+        """
 
         return -u_xx - u_yy - forcing_function(x)
 
@@ -79,6 +101,7 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
 
     @jax.jit
     def compute_manual_gradient_bnd(state, x):
+        """Assumes homogeneous Dirichlet BCs"""
         # For MSE
         n = x.shape[0]
 
@@ -246,6 +269,7 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
                 lm_data = None
 
             elif lm_info.method == 'smw':
+                """
                 # For ease of access
                 lamb = lm_info.lamb
 
@@ -274,6 +298,78 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
 
                 grads = tree_map(lambda a, b, c: 1 / lamb * a - (b + c), grads, adjustment_pde, adjustment_bnd)
                 lm_data = None
+                """
+
+                # For ease of access
+                lamb = lm_info.lamb
+
+                # --- Calculate J @ grads (rhs component) ---
+                # Jvp is generally efficient
+                _, jvp_output_pde = jax.jvp(
+                    lambda p: pde_output(p, interior_points), (state.params,), (grads,)
+                )
+                _, jvp_output_bnd = jax.jvp(
+                    lambda p: bnd_output(p, boundary_points), (state.params,), (grads,)
+                )
+                jvp_output = jnp.concatenate((jvp_output_pde, jvp_output_bnd))
+                # This is the right-hand side vector for the linear system to solve
+                b = jvp_output / (lamb ** 2)
+                # --- End rhs calculation ---
+
+                # --- Construct Jacobian J ---
+                # This step (jacrev) can still be expensive
+                jacobian_fn_pde = flatten_jacobian(
+                    jax.jacrev(pde_output)(state.params, interior_points), interior_points
+                )
+                jacobian_fn_bnd = flatten_jacobian(
+                    jax.jacrev(bnd_output)(state.params, boundary_points), boundary_points
+                )
+                jacobian_fn = jnp.concatenate((jacobian_fn_pde, jacobian_fn_bnd))
+                # --- End Jacobian construction ---
+
+                # --- Form System Matrix M = I + (1/lambda) J J^T ---
+                # This matrix multiplication is expensive: O(N_points^2 * N_params)
+                mat_jjT = jacobian_fn @ jacobian_fn.T
+                n_points = mat_jjT.shape[0]
+                # Ensure identity matrix has the same dtype as mat_jjT
+                identity = jnp.eye(n_points, dtype=mat_jjT.dtype)
+                M = identity + (1.0 / lamb) * mat_jjT
+                # --- End Matrix Formation ---
+
+                # --- Solve M @ out = b using Cholesky with fallback ---
+                # Use checkify for more robust error handling within JIT (optional but good practice)
+                # err, out = checkify.checkify(lambda M, b: _solve_cholesky_fallback(M, b),
+                #                             errors=checkify.user_checks)
+                # status = err.throw() # Raise error if check failed (e.g., matrix singular)
+                # # OR: A simpler try/except suitable if not deeply nested in complex JIT
+                try:
+                    # Attempt Cholesky decomposition M = L @ L.T
+                    L = jax.numpy.linalg.cholesky(M)
+                    # Solve L @ y = b (forward substitution)
+                    y = jax.scipy.linalg.solve_triangular(L, b, lower=True, check_finite=False)
+                    # Solve L.T @ out = y (backward substitution)
+                    out = jax.scipy.linalg.solve_triangular(L.T, y, lower=False, check_finite=False)
+                    # If successful, 'out' holds the solution.
+                    # Optionally: print or log outside JIT scope that Cholesky was used
+                    # print("Cholesky solve succeeded.")
+                except Exception as e:
+                    # Fallback if Cholesky fails (e.g., matrix not positive definite numerically)
+                    # Optionally: print or log outside JIT scope about fallback
+                    # print("Cholesky failed, falling back to jnp.linalg.solve.")
+                    out = jnp.linalg.solve(M, b)
+                # --- End Solve ---
+
+                # --- Apply VJPs to get the adjustment term ---
+                # VJPs are generally efficient
+                adjustment_pde = vjp_fn_pde(out[0:len(interior_points)])[0]
+                adjustment_bnd = vjp_fn_bnd(out[len(interior_points):])[0]
+                # --- End VJP ---
+
+                # --- Final gradient update ---
+                grads = tree_map(lambda g, adj_p, adj_b: (1.0 / lamb) * g - (adj_p + adj_b),
+                                 grads, adjustment_pde, adjustment_bnd)
+                lm_data = None
+
 
             elif lm_info.method == 'cg':
                 # Define mat-vec for (\lambda I + J^T J)
@@ -298,11 +394,22 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
 
         return state, loss_bnd + loss_pde, lm_data
 
+
+    interior_points, boundary_points = problem_data
+
+    if solution_function is not None:
+        exact_solution_fn = jax.vmap(solution_function)
+        exact_interior = exact_solution_fn(interior_points)
+        exact_boundary = exact_solution_fn(boundary_points)
+
     metrics_history = {
-        'train_loss': [], 'eigs': [], 'mat': [],
+        'train_loss': [],
+        'l2_error': [], 'l2_error_pde': [], 'l2_error_bc': [],
+        'eigs': [], 'mat': [],
         'lm_data': [],
         'prediction': []
     }
+
 
     rng_key = jax.random.PRNGKey(0)
 
@@ -323,13 +430,32 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
             epoch_loss += loss
             num_batches += 1
 
+        if batch_size < 0:
+            assert num_batches == 1, f"num_batches has to be 1 in full-batch case: recorded={num_batches}"
+
+
         # Compute the average loss for the epoch
         avg_loss = epoch_loss / num_batches
         metrics_history['train_loss'].append(avg_loss)
         metrics_history['lm_data'].append(lm_data)
-        progress_bar.set_postfix(loss=f'{avg_loss:.4f}')
+        progress_bar.set_postfix(loss=f'{avg_loss:1.4e}')
+
 
         if (epoch % 100) == 0:
+
+            if solution_function is not None:
+                preds_interior = jax.vmap(lambda x: jnp.squeeze(state.apply_fn(state.params, x)))(interior_points)
+                preds_boundary = jax.vmap(lambda x: jnp.squeeze(state.apply_fn(state.params, x)))(boundary_points)
+
+                error_interior = jnp.sqrt(jnp.mean((preds_interior - exact_interior) ** 2))
+                error_boundary = jnp.sqrt(jnp.mean((preds_boundary - exact_boundary) ** 2))
+                total_error = (error_interior + error_boundary) / 2
+
+                metrics_history['l2_error'].append(total_error)
+                metrics_history['l2_error_pde'].append(error_interior)
+                metrics_history['l2_error_bc'].append(error_boundary)
+                #print(f'Epoch {epoch}: L2 Error {total_error:.5e}')
+
             if obtain_matrices:
                 pass
                 # out = get_eigs(state, x)
@@ -352,6 +478,26 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
                 get_p(state, x[0][0:200], x[1][0:100], 
                       metrics_history['prediction'][-1])
                 
+
+
+    if metrics_file:
+        import pickle
+        import numpy as np
+
+        file_name = f"{metrics_file}.pkl"
+        print(f"\nTraining complete. Saving metrics to {file_name}...")
+        try:
+            metrics_to_save = tree_map(lambda leaf: np.asarray(leaf) if isinstance(leaf, jax.Array) else leaf,
+                                       metrics_history)
+
+            with open(file_name, 'wb') as f:
+                pickle.dump(metrics_to_save, f)
+            print("Metrics saved successfully.")
+        except IOError as e:
+            print(f"Error: Could not write metrics to file {file_name}. IOError: {e}")
+        except Exception as e:
+            print(f"Error: An unexpected error occurred while saving metrics: {e}")
+
 
     return state, metrics_history
 
