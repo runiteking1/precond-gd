@@ -14,16 +14,24 @@ from flax.training.train_state import TrainState  # Useful dataclass to keep tra
 from jax.tree import map as tree_map
 from tqdm import tqdm
 
-from cg import conjugate_gradient
-from data_utils import batch_data
-from jacobian_tools import flatten_jacobian
-from model_utils import create_train_state
-from MLP import MLP_1D
-from plotting import plot_results
-from matplotlib import pyplot as plt
+# from cg import conjugate_gradient
+# from data_utils import batch_data
+# from jacobian_tools import flatten_jacobian
+# from model_utils import create_train_state
+# from MLP import MLP_1D
+# from plotting import plot_results
+# from matplotlib import pyplot as plt
+from precond_gd.utils.cg import conjugate_gradient
+from precond_gd.utils import datasets
+from precond_gd.models.MLP import MLP_1D
+from precond_gd.data.data_utils import batch_data
+from precond_gd.utils.jacobian_tools import flatten_jacobian
+from precond_gd.utils.model_utils import create_train_state
+from precond_gd.utils.plotting import plot_results
 
-jax.config.update("jax_enable_x64", True)
-jax.config.update('jax_default_matmul_precision', 'highest')
+
+# jax.config.update("jax_enable_x64", True)
+# jax.config.update('jax_default_matmul_precision', 'highest')
 
 
 @chex.dataclass(frozen=True)
@@ -45,7 +53,8 @@ def train_model(state: TrainState, x, y, num_iterations: int = 1_000,
                 obtain_matrices: bool = False,
                 lm_schedule: PrecondData = None, batch_size=64,
                 x_test=None, y_test=None,
-                num_track: int = 100
+                num_track: int = 100,
+                save_weights: bool=False
                 ):
     @jax.jit
     def model_output(params, x):
@@ -223,6 +232,7 @@ def train_model(state: TrainState, x, y, num_iterations: int = 1_000,
         'lm_data': [],
         'prediction': [],
         'test_loss': [],
+        'weights': [],
     }
 
     rng_key = jax.random.PRNGKey(0)
@@ -258,6 +268,11 @@ def train_model(state: TrainState, x, y, num_iterations: int = 1_000,
             metrics_history['prediction'].append(
                 state.apply_fn(state.params, x)
             )
+
+            if save_weights:
+                metrics_history['weights'].append(
+                    state.params
+                )
 
             # Get test accuracy
             if x_test is not None:
