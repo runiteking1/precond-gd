@@ -42,7 +42,8 @@ class PrecondData:
 def train_model(state: TrainState, x, num_iterations: int = 1_000,
                 forcing_function=lambda x: 2 * jnp.pi * jnp.sin(jnp.pi * x[0]) * jnp.sin(jnp.pi * x[1]),
                 obtain_matrices: bool = False,
-                lm_schedule: PrecondData = None, batch_size=64
+                lm_schedule: PrecondData = None, batch_size=64,
+                get_analytics: bool = False
                 ):
     @jax.jit
     def model_single(params, x):
@@ -109,6 +110,35 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
         manual_grad = vjp_fn(residuals * 2 / n)[0]  # First term is wrt params
 
         return manual_grad, loss, vjp_fn
+        
+    @partial(jax.jit)
+    def get_p(state, interior_points, boundary_points, vals):
+        lamb = .1
+
+        # J \vec k
+        _, jvp_output_pde = jax.jvp(
+            lambda p: pde_output(p, interior_points), (state.params,), (vals,)
+        )
+        _, jvp_output_bnd = jax.jvp(
+            lambda p: bnd_output(p, boundary_points), (state.params,), (vals,)
+        )
+        jvp_output = jnp.concat((jvp_output_pde, jvp_output_bnd))
+
+        # Construct and compute (I + 1/lambda JJ^T)^{-1} (Jv)
+        jacobian_fn_pde = flatten_jacobian(
+            jax.jacrev(pde_output)(state.params, interior_points), interior_points
+        )
+        jacobian_fn_bnd = flatten_jacobian(
+            jax.jacrev(bnd_output)(state.params, boundary_points), boundary_points
+        )
+        jacobian_fn = jnp.concat((jacobian_fn_pde, jacobian_fn_bnd))
+        mat = jacobian_fn @ jacobian_fn.T
+        out = jnp.linalg.solve(jnp.eye(mat.shape[0]) + 1 / lamb * mat, jvp_output / (lamb ** 2))
+
+        adjustment_pde = vjp_fn_pde(out[0:len(interior_points)])[0]
+        adjustment_bnd = vjp_fn_bnd(out[len(interior_points):])[0]
+
+        vals = tree_map(lambda a, b, c: 1 / lamb * a - (b + c), grads, adjustment_pde, adjustment_bnd)
 
     @partial(jax.jit, static_argnames='lm_info')
     def train_step(state, interior_points, boundary_points, lm_info: PrecondData = None):
@@ -310,7 +340,18 @@ def train_model(state: TrainState, x, num_iterations: int = 1_000,
             # metrics_history['prediction'].append(
             #     state.apply_fn(state.params, x_interio)
             # )
-            pass
+            if get_analytics: 
+                # First get error f(x)
+                metrics_history['prediction'].append(
+                    state.apply_fn(state.params, x[0])
+                )
+
+                print(metrics_history['prediction'][-1])
+    
+                # Next grab matrix P
+                get_p(state, x[0][0:200], x[1][0:100], 
+                      metrics_history['prediction'][-1])
+                
 
     return state, metrics_history
 
