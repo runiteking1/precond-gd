@@ -44,7 +44,7 @@ def train_model(state: TrainState, problem_data : any, num_iterations: int = 1_0
                 solution_function=None,
                 obtain_matrices: bool = False,
                 lm_schedule: PrecondData = None, batch_size=64,
-                metrics_file: str = None
+                metrics_file: str = None,
                 get_analytics: bool = False
                 ):
 
