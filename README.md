@@ -5,3 +5,5 @@ Reproduction of "On the Convergence Behavior of Preconditioned Gradient Descent 
 - Fig 5: experiments/grokking/modulo_example.ipynb
 - Fig 6: experiments/grokking/grokking_polynomial.ipynb
 - Fig 7: experiments/grokking/mnist-grokking-best.ipynb
+- Fig 8: experiments/gauss_newton/ex_2.ipynb
+- Fig 9: ???

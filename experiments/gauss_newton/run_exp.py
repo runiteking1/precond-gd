@@ -54,7 +54,8 @@ def train_model(state: TrainState, x, y, num_iterations: int = 1_000,
                 lm_schedule: PrecondData = None, batch_size=64,
                 x_test=None, y_test=None,
                 num_track: int = 100,
-                save_weights: bool=False
+                save_weights: bool=False, 
+                seed: int = 0
                 ):
     @jax.jit
     def model_output(params, x):
@@ -235,7 +236,7 @@ def train_model(state: TrainState, x, y, num_iterations: int = 1_000,
         'weights': [],
     }
 
-    rng_key = jax.random.PRNGKey(0)
+    rng_key = jax.random.PRNGKey(seed)
 
     for epoch in tqdm(range(num_iterations), leave=True):
         # Jax randomness kinda sucks; but this ensures that each epoch the batches are diff
